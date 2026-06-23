@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Security Lab — Attack Intelligence Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #090d12; --surface: #0f1419; --card: #141b24;
+      --border:   #1e2d3d; --border2: #243447;
+      --accent:   #4da6ff; --accent2: #2979d9;
+      --danger:   #ff4757; --warning: #ffa502;
+      --success:  #2ed573; --muted:   #5a7a99;
+      --text:     #c9d8e8; --text-dim: #6e8ca8;
+    }
+    body { background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh; overflow-x:hidden; }
+    ::-webkit-scrollbar { width:5px; height:5px; }
+    ::-webkit-scrollbar-track { background:var(--surface); }
+    ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
+    @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.3} }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+    @keyframes slideIn{ from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:none} }
+    @keyframes glow   { 0%,100%{box-shadow:0 0 8px rgba(77,166,255,.3)} 50%{box-shadow:0 0 20px rgba(77,166,255,.6)} }
+    .pulse   { animation:pulse 2s infinite; }
+    .fade-in { animation:fadeIn .4s ease; }
+    .glow    { animation:glow 3s infinite; }
+
+    /* NAV */
+    nav { background:var(--surface); border-bottom:1px solid var(--border); padding:0 24px;
+          height:56px; display:flex; align-items:center; justify-content:space-between;
+          position:sticky; top:0; z-index:100; backdrop-filter:blur(10px); }
+    .nav-brand { display:flex; align-items:center; gap:10px; }
+    .nav-brand .shield { width:32px; height:32px; background:linear-gradient(135deg,#1e3a5f,#2979d9);
+      border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; }
+    .nav-brand h1 { font-size:15px; font-weight:700; color:#fff; letter-spacing:-.3px; }
+    .nav-brand span { font-size:12px; color:var(--text-dim); margin-left:4px; }
+    .nav-tabs { display:flex; gap:4px; }
+    .tab-btn { padding:6px 14px; border-radius:6px; font-size:13px; font-weight:500;
+               border:none; cursor:pointer; color:var(--text-dim); background:transparent; transition:all .15s; }
+    .tab-btn:hover { color:var(--text); background:var(--card); }
+    .tab-btn.active { color:#fff; background:var(--accent2); }
+    .nav-status { display:flex; align-items:center; gap:16px; }
+    .status-dot { width:8px; height:8px; border-radius:50%; background:var(--success); }
+    .status-dot.offline { background:var(--danger); animation:none; }
+    .status-label { font-size:12px; font-weight:500; }
+    .clock { font-size:12px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; }
+    .auditor-btn { padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600;
+                   border:1px solid var(--border2); cursor:pointer; transition:all .2s; font-family:inherit; }
+    .auditor-btn.stop  { background:rgba(255,71,87,.15); color:var(--danger); border-color:rgba(255,71,87,.3); }
+    .auditor-btn.start { background:rgba(46,213,115,.15); color:var(--success); border-color:rgba(46,213,115,.3); }
+    .auditor-btn:hover { filter:brightness(1.2); }
+
+    /* LAYOUT */
+    main { padding:24px; max-width:1280px; margin:0 auto; }
+    .page { display:none; }
+    .page.active { display:block; animation:fadeIn .3s ease; }
+    .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
+    @media(max-width:768px){ .stats-grid { grid-template-columns:repeat(2,1fr); } }
+    .stat-card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+                 padding:20px; position:relative; overflow:hidden; transition:border-color .2s,transform .2s; }
+    .stat-card:hover { border-color:var(--border2); transform:translateY(-1px); }
+    .stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px;
+                         background:var(--accent-color,var(--accent)); opacity:.7; }
+    .stat-card.danger  { --accent-color:var(--danger); }
+    .stat-card.warn    { --accent-color:var(--warning); }
+    .stat-card.success { --accent-color:var(--success); }
+    .stat-label { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+    .stat-value { font-size:36px; font-weight:700; color:#fff; line-height:1; }
+    .stat-sub   { font-size:11px; color:var(--text-dim); margin-top:6px; }
+    .stat-card.danger .stat-value  { color:var(--danger); }
+    .stat-card.warn   .stat-value  { color:var(--warning); }
+    .stat-card.success .stat-value { color:var(--success); }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media(max-width:900px){ .grid-2 { grid-template-columns:1fr; } }
+    .panel { background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .panel-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex;
+                    align-items:center; justify-content:space-between; }
+    .panel-title  { font-size:13px; font-weight:600; color:#fff; display:flex; align-items:center; gap:8px; }
+    .panel-body   { padding:16px 20px; }
+
+    /* IP / ALERT ROWS */
+    .ip-row { display:flex; align-items:center; justify-content:space-between;
+              padding:8px 0; border-bottom:1px solid var(--border); }
+    .ip-row:last-child { border-bottom:none; }
+    .ip-addr { font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--accent); }
+    .ip-meta { font-size:11px; color:var(--text-dim); margin-top:2px; }
+    .ip-hits { font-size:12px; font-weight:600; padding:2px 10px; border-radius:20px;
+               background:rgba(255,71,87,.12); color:var(--danger); }
+    .alert-row { display:flex; align-items:center; justify-content:space-between;
+                 padding:8px 0; border-bottom:1px solid var(--border); }
+    .alert-row:last-child { border-bottom:none; }
+    .alert-ip   { font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--accent); }
+    .alert-meta { font-size:11px; color:var(--text-dim); margin-top:2px; }
+
+    /* BADGE */
+    .badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px;
+             text-transform:uppercase; letter-spacing:.5px; }
+    .badge-critical { background:rgba(255,71,87,.2);  color:var(--danger);  border:1px solid rgba(255,71,87,.3); }
+    .badge-high     { background:rgba(255,165,2,.2);  color:var(--warning); border:1px solid rgba(255,165,2,.3); }
+    .badge-medium   { background:rgba(77,166,255,.2); color:var(--accent);  border:1px solid rgba(77,166,255,.3); }
+    .badge-low      { background:rgba(46,213,115,.2); color:var(--success); border:1px solid rgba(46,213,115,.3); }
+
+    /* TABLE */
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    thead tr { border-bottom:1px solid var(--border); }
+    th { padding:10px 12px; color:var(--text-dim); font-weight:500; text-align:left;
+         font-size:11px; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
+    th.sortable { cursor:pointer; user-select:none; }
+    th.sortable:hover { color:var(--text); background:rgba(255,255,255,.03); }
+    th.sort-asc::after  { content:' ▲'; color:var(--accent); font-size:9px; }
+    th.sort-desc::after { content:' ▼'; color:var(--accent); font-size:9px; }
+    td { padding:11px 12px; border-bottom:1px solid var(--border); }
+    tbody tr { transition:background .15s; }
+    tbody tr:hover { background:rgba(77,166,255,.04); }
+    tbody tr:last-child td { border-bottom:none; }
+    td.mono  { font-family:'JetBrains Mono',monospace; font-size:12px; }
+    td.muted { color:var(--text-dim); }
+
+    /* FILTER / INPUT */
+    .filter-bar { display:flex; gap:8px; align-items:center; }
+    select, input {
+      background:var(--surface); border:1px solid var(--border2); color:var(--text);
+      font-family:inherit; font-size:12px; padding:5px 10px; border-radius:6px; outline:none; cursor:pointer;
+    }
+    select:focus, input:focus { border-color:var(--accent); }
+
+    /* LIVE FEED */
+    #live-feed { font-family:'JetBrains Mono',monospace; font-size:12px; height:500px;
+                 overflow-y:auto; background:var(--bg); border-radius:8px; padding:14px; line-height:1.7; }
+    .log-line    { animation:slideIn .2s ease; }
+    .log-info    { color:var(--text-dim); }
+    .log-warn    { color:var(--warning); }
+    .log-alert   { color:var(--danger); }
+    .log-success { color:var(--success); }
+    .log-err     { color:#ff6b81; }
+
+    /* MODULE CARDS */
+    .modules-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+    @media(max-width:900px){ .modules-grid { grid-template-columns:repeat(2,1fr); } }
+    @media(max-width:600px){ .modules-grid { grid-template-columns:1fr; } }
+    .module-card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+                   padding:18px; transition:border-color .2s,transform .2s; }
+    .module-card:hover { transform:translateY(-2px); border-color:var(--border2); }
+    .module-card.active { border-color:rgba(46,213,115,.3); }
+    .module-icon   { font-size:24px; margin-bottom:10px; }
+    .module-name   { font-size:13px; font-weight:600; color:#fff; margin-bottom:4px; }
+    .module-desc   { font-size:11px; color:var(--text-dim); line-height:1.5; }
+    .module-status { display:inline-flex; align-items:center; gap:5px; font-size:11px;
+                     font-weight:600; margin-top:10px; padding:3px 9px; border-radius:20px; }
+    .module-status.on  { background:rgba(46,213,115,.15); color:var(--success); }
+    .module-status.off { background:rgba(90,122,153,.15); color:var(--muted); }
+
+    /* ACTION BUTTONS */
+    .btn-sm { padding:4px 10px; border-radius:6px; font-size:11px; font-weight:500;
+              border:1px solid var(--border2); background:var(--surface);
+              color:var(--text-dim); cursor:pointer; font-family:inherit; transition:all .15s; }
+    .btn-sm:hover { color:var(--text); border-color:var(--accent); }
+    .btn-wl  { border-color:rgba(46,213,115,.3);  color:var(--success); }
+    .btn-wl:hover  { background:rgba(46,213,115,.1); }
+    .btn-bl  { border-color:rgba(255,71,87,.3);   color:var(--danger); }
+    .btn-bl:hover  { background:rgba(255,71,87,.1); }
+    .btn-primary { padding:6px 14px; border-radius:6px; font-size:12px; font-weight:600;
+                   border:none; background:var(--accent2); color:#fff; cursor:pointer;
+                   font-family:inherit; transition:all .15s; }
+    .btn-primary:hover { background:#3088f0; }
+    .action-group { display:flex; gap:5px; }
+
+    /* WS BADGE */
+    .ws-badge { font-size:10px; padding:2px 8px; border-radius:20px; font-weight:600; }
+    .ws-badge.connected    { background:rgba(46,213,115,.15); color:var(--success); }
+    .ws-badge.disconnected { background:rgba(255,71,87,.15);  color:var(--danger); }
+
+    /* MODAL */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
+                     z-index:1000; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; animation:fadeIn .2s ease; }
+    .modal { background:var(--card); border:1px solid var(--border2); border-radius:14px;
+             padding:24px 28px; width:100%; max-width:400px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+    .modal h3 { font-size:14px; font-weight:600; color:#fff; margin-bottom:6px; }
+    .modal p  { font-size:12px; color:var(--text-dim); margin-bottom:18px; line-height:1.6; }
+    .modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+    .modal-actions .btn-cancel { padding:6px 16px; border-radius:6px; font-size:12px; font-weight:500;
+      border:1px solid var(--border2); background:transparent; color:var(--text-dim);
+      cursor:pointer; font-family:inherit; }
+    .modal-actions .btn-cancel:hover { color:var(--text); }
+    .modal-actions .btn-confirm { padding:6px 16px; border-radius:6px; font-size:12px; font-weight:600;
+      border:none; background:var(--accent2); color:#fff; cursor:pointer; font-family:inherit; }
+    .modal-actions .btn-confirm:hover { background:#3088f0; }
+    .modal-actions .btn-confirm.danger { background:rgba(255,71,87,.8); }
+    .modal-actions .btn-confirm.danger:hover { background:var(--danger); }
+    .modal-ip { font-family:'JetBrains Mono',monospace; color:var(--accent);
+                background:var(--surface); border-radius:6px; padding:2px 8px; font-size:13px; }
+    /* TOAST */
+    #toast { position:fixed; bottom:24px; right:24px; z-index:2000; display:flex; flex-direction:column; gap:8px; }
+    .toast-item { padding:10px 16px; border-radius:8px; font-size:12px; font-weight:500;
+                  animation:fadeIn .3s ease; box-shadow:0 4px 20px rgba(0,0,0,.4); }
+    .toast-item.success { background:rgba(46,213,115,.2);  color:var(--success); border:1px solid rgba(46,213,115,.3); }
+    .toast-item.error   { background:rgba(255,71,87,.2);   color:var(--danger);  border:1px solid rgba(255,71,87,.3); }
+    .toast-item.info    { background:rgba(77,166,255,.2);  color:var(--accent);  border:1px solid rgba(77,166,255,.3); }
+    .toast-item.warn    { background:rgba(255,165,2,.2);   color:var(--warning); border:1px solid rgba(255,165,2,.3); }
+    /* MISC */
+    .empty-state { text-align:center; padding:40px 20px; color:var(--text-dim); font-size:13px; }
+    .section-header { margin-bottom:20px; }
+    .section-header h2 { font-size:15px; font-weight:600; color:#fff; margin-bottom:4px; }
+    .section-header p  { font-size:12px; color:var(--text-dim); }
+
+    /* LIST ITEMS (whitelist/blacklist/reports) */
+    .list-item { display:flex; align-items:center; justify-content:space-between;
+                 padding:10px 0; border-bottom:1px solid var(--border); }
+    .list-item:last-child { border-bottom:none; }
+    .list-ip   { font-family:'JetBrains Mono',monospace; font-size:13px; }
+    .list-meta { font-size:11px; color:var(--text-dim); margin-top:2px; }
+
+    /* ADD FORM */
+    .add-form { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+    .add-form input { flex:1; min-width:160px; }
+
+    /* REPORT CARDS */
+    .report-card { background:var(--surface); border:1px solid var(--border); border-radius:10px;
+                   padding:14px 18px; display:flex; align-items:center; justify-content:space-between;
+                   margin-bottom:10px; transition:border-color .2s; }
+    .report-card:hover { border-color:var(--border2); }
+    .report-name  { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent); }
+    .report-date  { font-size:11px; color:var(--text-dim); margin-top:3px; }
+    .report-size  { font-size:11px; color:var(--muted); }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-brand">
+      <div class="shield">🛡️</div>
+      <div><h1>Security Lab <span>/ Attack Intelligence</span></h1></div>
+    </div>
+    <div class="nav-tabs">
+      <button class="tab-btn active" id="tab-dashboard" onclick="showTab('dashboard')">Dashboard</button>
+      <button class="tab-btn" id="tab-live"      onclick="showTab('live')">Live Feed</button>
+      <button class="tab-btn" id="tab-alerts"    onclick="showTab('alerts')">Alerts</button>
+      <button class="tab-btn" id="tab-lists"     onclick="showTab('lists')">IP Lists</button>
+      <button class="tab-btn" id="tab-reports"   onclick="showTab('reports')">Reports</button>
+    </div>
+    <div class="nav-status">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="status-dot pulse" id="status-dot"></div>
+        <span class="status-label" id="status-label" style="color:var(--success)">Live</span>
+      </div>
+      <button class="auditor-btn stop" id="auditor-btn" onclick="toggleAuditor()">Stop Auditor</button>
+      <span class="clock" id="clock"></span>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- ══ DASHBOARD ══ -->
+    <div class="page active" id="page-dashboard">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total Attacks (24h)</div>
+          <div class="stat-value" id="stat-total">—</div><div class="stat-sub">last 24 hours</div></div>
+        <div class="stat-card danger"><div class="stat-label">Critical Alerts</div>
+          <div class="stat-value" id="stat-critical">—</div><div class="stat-sub">immediate action needed</div></div>
+        <div class="stat-card warn"><div class="stat-label">Unique Attacker IPs</div>
+          <div class="stat-value" id="stat-ips">—</div><div class="stat-sub">distinct sources</div></div>
+        <div class="stat-card success"><div class="stat-label">High Severity</div>
+          <div class="stat-value" id="stat-high">—</div><div class="stat-sub">high priority events</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">🌍 Top Attacking IPs</div>
+            <span style="font-size:11px;color:var(--text-dim)">24h</span>
+          </div>
+          <div class="panel-body" id="top-attackers"><div class="empty-state">Loading...</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">🚨 Recent Alerts</div>
+            <span style="font-size:11px;color:var(--text-dim)">latest 5</span>
+          </div>
+          <div class="panel-body" id="recent-alerts"><div class="empty-state">Loading...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ LIVE FEED ══ -->
+    <div class="page" id="page-live">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="status-dot pulse"></span>
+            Live Log Feed
+            <span class="ws-badge disconnected" id="ws-badge">Connecting...</span>
+          </div>
+          <button class="btn-sm" onclick="clearFeed()">Clear</button>
+        </div>
+        <div class="panel-body" style="padding:12px;">
+          <div id="live-feed"><div class="log-line log-success">[system] Connecting to auditor WebSocket...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ALERTS ══ -->
+    <div class="page" id="page-alerts">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🚨 All Alerts</div>
+          <div class="filter-bar">
+            <select id="filter-severity" onchange="loadAlerts()">
+              <option value="all">All Severity</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <div class="table-wrap">
+            <table>
+              <thead><tr id="alerts-thead">
+                <th class="sortable sort-desc" data-col="timestamp">Time</th>
+                <th class="sortable" data-col="ip">IP</th>
+                <th class="sortable" data-col="user">User</th>
+                <th class="sortable" data-col="alert_type">Type</th>
+                <th class="sortable" data-col="country">Country</th>
+                <th class="sortable" data-col="abuse_score">Abuse%</th>
+                <th class="sortable" data-col="severity">Severity</th>
+                <th>Actions</th>
+              </tr></thead>
+              <tbody id="alerts-table"><tr><td colspan="8" class="empty-state">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ IP LISTS ══ -->
+    <div class="page" id="page-lists">
+      <div class="grid-2">
+
+        <!-- WHITELIST -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">✅ Whitelist</div>
+            <span style="font-size:11px;color:var(--text-dim)">Alerts suppressed</span>
+          </div>
+          <div class="panel-body">
+            <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">IPs on this list will never trigger alerts.</p>
+            <div class="add-form">
+              <input id="wl-ip"   type="text" placeholder="IP address (e.g. 192.168.1.1)" />
+              <input id="wl-note" type="text" placeholder="Note (optional)" />
+              <button class="btn-primary" onclick="addToWhitelist()">+ Add</button>
+            </div>
+            <div id="whitelist-items"><div class="empty-state">No whitelisted IPs</div></div>
+          </div>
+        </div>
+
+        <!-- BLACKLIST -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">🚫 Blacklist</div>
+            <span style="font-size:11px;color:var(--text-dim)">Manually flagged</span>
+          </div>
+          <div class="panel-body">
+            <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">IPs manually flagged as hostile.</p>
+            <div class="add-form">
+              <input id="bl-ip"   type="text" placeholder="IP address (e.g. 1.2.3.4)" />
+              <input id="bl-note" type="text" placeholder="Note (optional)" />
+              <button class="btn-primary" onclick="addToBlacklist()">+ Add</button>
+            </div>
+            <div id="blacklist-items"><div class="empty-state">No blacklisted IPs</div></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══ REPORTS ══ -->
+    <div class="page" id="page-reports">
+      <div class="section-header">
+        <h2>📊 Daily Attack Reports</h2>
+        <p>Auto-generated HTML reports every 24h at 08:00. Click to open.</p>
+      </div>
+      <div id="reports-list"><div class="empty-state">Loading reports...</div></div>
+    </div>
+
+  </main>
+
+  <!-- CONFIRM MODAL -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <h3 id="modal-title">Confirm</h3>
+      <p id="modal-body"></p>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="modalCancel()">Cancel</button>
+        <button class="btn-confirm" id="modal-confirm-btn" onclick="modalConfirm()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div id="toast"></div>
+
+  <script>
+    const API = '';
+
+    setInterval(() => {
+      document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+    }, 1000);
+
+    const TAB_LOADERS = {
+      lists:   () => { loadWhitelist(); loadBlacklist(); },
+      reports: () => loadReports(),
+    };
+
+    function showTab(name) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('page-' + name).classList.add('active');
+      document.getElementById('tab-'  + name).classList.add('active');
+      if (TAB_LOADERS[name]) TAB_LOADERS[name]();
+    }
+
+    let ws, auditorRunning = true;
+
+    function connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}`);
+      ws.onopen  = () => { setBadge('connected'); addLog('[websocket] Connected to auditor stream', 'success'); };
+      ws.onclose = () => { setBadge('disconnected'); setTimeout(connectWS, 3000); };
+      ws.onerror = () => {};
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'new_alert') {
+          const a = msg.data;
+          addLog(`[ALERT] ${a.severity} | ${a.alert_type} | ${a.ip} (${a.country||'?'}) | user:${a.user}`, severityToLogType(a.severity));
+          refreshDashboard();
+          prependAlertRow(a);
+        } else if (msg.type === 'log')     { addLog(msg.data, 'info'); }
+          else if (msg.type === 'log_err') { addLog(msg.data, 'err'); }
+          else if (msg.type === 'auditor_status') { setAuditorStatus(msg.running); }
+          else if (msg.type === 'whitelist_update') { loadWhitelist(); }
+          else if (msg.type === 'blacklist_update') { loadBlacklist(); }
+      };
+    }
+
+    function setBadge(s) {
+      const b = document.getElementById('ws-badge');
+      b.className = `ws-badge ${s}`;
+      b.textContent = s === 'connected' ? 'Live' : 'Disconnected';
+    }
+
+    function severityToLogType(s) {
+      return { CRITICAL:'alert', HIGH:'warn', MEDIUM:'warn', LOW:'info' }[s] || 'info';
+    }
+
+    function addLog(text, type = 'info') {
+      const feed = document.getElementById('live-feed');
+      const div  = document.createElement('div');
+      div.className = `log-line log-${type}`;
+      div.textContent = text;
+      feed.appendChild(div);
+      if (feed.children.length > 500) feed.removeChild(feed.firstChild);
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    function clearFeed() {
+      document.getElementById('live-feed').innerHTML =
+        '<div class="log-line log-success">[system] Feed cleared.</div>';
+    }
+
+    function setAuditorStatus(running) {
+      auditorRunning = running;
+      const dot   = document.getElementById('status-dot');
+      const label = document.getElementById('status-label');
+      const btn   = document.getElementById('auditor-btn');
+      if (running) {
+        dot.className = 'status-dot pulse'; dot.style.background = 'var(--success)';
+        label.textContent = 'Live'; label.style.color = 'var(--success)';
+        btn.textContent = 'Stop Auditor'; btn.className = 'auditor-btn stop';
+      } else {
+        dot.className = 'status-dot offline'; dot.style.background = 'var(--danger)';
+        label.textContent = 'Stopped'; label.style.color = 'var(--danger)';
+        btn.textContent = 'Start Auditor'; btn.className = 'auditor-btn start';
+      }
+    }
+
+    async function toggleAuditor() {
+      const endpoint = auditorRunning ? '/api/auditor/stop' : '/api/auditor/start';
+      await fetch(API + endpoint, { method: 'POST' });
+    }
+
+    async function refreshDashboard() {
+      const [stats, topIps, recentAlerts] = await Promise.all([
+        fetch(API + '/api/stats').then(r => r.json()),
+        fetch(API + '/api/top-ips?limit=5').then(r => r.json()),
+        fetch(API + '/api/alerts?limit=5').then(r => r.json()),
+      ]);
+
+      document.getElementById('stat-total').textContent    = stats.total;
+      document.getElementById('stat-critical').textContent = stats.critical;
+      document.getElementById('stat-ips').textContent      = stats.unique_ips;
+      document.getElementById('stat-high').textContent     = stats.high;
+
+      document.getElementById('top-attackers').innerHTML = topIps.length
+        ? topIps.map(ip => `
+          <div class="ip-row">
+            <div>
+              <div class="ip-addr">${ip.ip}</div>
+              <div class="ip-meta">${ip.country||'Unknown'} · abuse ${ip.abuse_score||0}%</div>
+            </div>
+            <span class="ip-hits">${ip.hits} hit${ip.hits!==1?'s':''}</span>
+          </div>`).join('')
+        : '<div class="empty-state">No attacks in last 24h</div>';
+
+      document.getElementById('recent-alerts').innerHTML = recentAlerts.length
+        ? recentAlerts.map(a => `
+          <div class="alert-row">
+            <div>
+              <div class="alert-ip">${a.ip}</div>
+              <div class="alert-meta">${a.user||'?'} · ${a.alert_type}</div>
+            </div>
+            <span class="badge badge-${(a.severity||'low').toLowerCase()}">${a.severity}</span>
+          </div>`).join('')
+        : '<div class="empty-state">No recent alerts</div>';
+    }
+
+    let _sortCol = 'timestamp', _sortOrder = 'desc';
+
+    document.addEventListener('DOMContentLoaded', () => wireSortHeaders());
+    function wireSortHeaders() {
+      document.querySelectorAll('#alerts-thead th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+          if (_sortCol === th.dataset.col) {
+            _sortOrder = _sortOrder === 'desc' ? 'asc' : 'desc';
+          } else {
+            _sortCol = th.dataset.col;
+            _sortOrder = 'desc';
+          }
+          updateSortHeaders();
+          loadAlerts();
+        });
+      });
+    }
+
+    function updateSortHeaders() {
+      document.querySelectorAll('#alerts-thead th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.dataset.col === _sortCol)
+          th.classList.add(_sortOrder === 'asc' ? 'sort-asc' : 'sort-desc');
+      });
+    }
+
+    function countryFlag(cc) {
+      if (!cc || cc === 'Unknown' || cc === '—') return '';
+      try {
+        return [...cc.toUpperCase()].map(c => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0))).join('');
+      } catch { return ''; }
+    }
+
+    function fmtCountry(raw) {
+      const cc = (raw || '').trim();
+      if (!cc || cc === 'Unknown') return '—';
+      const flag = countryFlag(cc);
+      return flag ? flag + ' ' + cc : cc;
+    }
+
+    async function loadAlerts() {
+      const severity = document.getElementById('filter-severity').value;
+      const p = new URLSearchParams({ limit: 100, sort: _sortCol, order: _sortOrder });
+      if (severity && severity !== 'all') p.set('severity', severity);
+      renderAlertsTable(await fetch(API + '/api/alerts?' + p).then(r => r.json()));
+    }
+
+    function renderAlertsTable(data) {
+      document.getElementById('alerts-table').innerHTML = data.length
+        ? data.map(a => `
+          <tr>
+            <td class="mono muted" style="font-size:11px;">${a.timestamp||''}</td>
+            <td class="mono" style="color:var(--accent)">${a.ip}</td>
+            <td>${a.user||'—'}</td>
+            <td style="font-size:12px;">${a.alert_type}</td>
+            <td style="font-size:12px;">${fmtCountry(a.country)}</td>
+            <td class="mono" style="font-size:12px;">${a.abuse_score != null ? a.abuse_score + '%' : '—'}</td>
+            <td><span class="badge badge-${(a.severity||'low').toLowerCase()}">${a.severity}</span></td>
+            <td>
+              <div class="action-group">
+                <button class="btn-sm btn-wl" onclick="quickAdd('whitelist','${a.ip}')" title="Add to Whitelist">✅ WL</button>
+                <button class="btn-sm btn-bl" onclick="quickAdd('blacklist','${a.ip}')" title="Add to Blacklist">🚫 BL</button>
+              </div>
+            </td>
+          </tr>`).join('')
+        : '<tr><td colspan="8" class="empty-state">No alerts found</td></tr>';
+    }
+
+    function prependAlertRow(a) {
+      const tbody = document.getElementById('alerts-table');
+      const tr    = document.createElement('tr');
+      tr.style.animation = 'fadeIn .4s ease';
+      tr.innerHTML = `
+        <td class="mono muted" style="font-size:11px;">${a.timestamp||''}</td>
+        <td class="mono" style="color:var(--accent)">${a.ip}</td>
+        <td>${a.user||'—'}</td>
+        <td style="font-size:12px;">${a.alert_type}</td>
+        <td style="font-size:12px;">${a.country||'—'}</td>
+        <td class="mono" style="font-size:12px;">${a.abuse_score||0}%</td>
+        <td><span class="badge badge-${(a.severity||'low').toLowerCase()}">${a.severity}</span></td>
+        <td>
+          <div class="action-group">
+            <button class="btn-sm btn-wl" onclick="quickAdd('whitelist','${a.ip}')" title="Whitelist">✅ WL</button>
+            <button class="btn-sm btn-bl" onclick="quickAdd('blacklist','${a.ip}')" title="Blacklist">🚫 BL</button>
+          </div>
+        </td>`;
+      tbody.insertBefore(tr, tbody.firstChild);
+    }
+
+    function toast(msg, type = 'info', ms = 3500) {
+      const el = document.createElement('div');
+      el.className = `toast-item ${type}`;
+      el.textContent = msg;
+      document.getElementById('toast').appendChild(el);
+      setTimeout(() => el.remove(), ms);
+    }
+
+    let _modalResolve = null;
+
+    function showModal({ title, body, confirmLabel = 'Confirm', danger = false }) {
+      document.getElementById('modal-title').textContent = title;
+      document.getElementById('modal-body').innerHTML   = body;
+      const btn = document.getElementById('modal-confirm-btn');
+      btn.textContent = confirmLabel;
+      btn.className   = 'btn-confirm' + (danger ? ' danger' : '');
+      document.getElementById('modal-overlay').classList.add('open');
+      return new Promise(resolve => { _modalResolve = resolve; });
+    }
+
+    function modalConfirm() {
+      document.getElementById('modal-overlay').classList.remove('open');
+      if (_modalResolve) { _modalResolve(true);  _modalResolve = null; }
+    }
+
+    function modalCancel() {
+      document.getElementById('modal-overlay').classList.remove('open');
+      if (_modalResolve) { _modalResolve(false); _modalResolve = null; }
+    }
+
+    document.getElementById('modal-overlay').addEventListener('click', e => {
+      if (e.target === e.currentTarget) modalCancel();
+    });
+
+    function isValidIP(ip) {
+      const v4 = /^(\d{1,3}\.){3}\d{1,3}$/;
+      if (v4.test(ip)) return ip.split('.').every(n => parseInt(n, 10) <= 255);
+      return /^([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}$/i.test(ip);
+    }
+
+    async function addToList(list, ip, note = '') {
+      const listLabel    = list === 'whitelist' ? 'Whitelist' : 'Blacklist';
+      const oppositeList = list === 'whitelist' ? 'blacklist' : 'whitelist';
+      const listColor    = list === 'whitelist' ? 'var(--success)' : 'var(--danger)';
+
+      if (!isValidIP(ip)) {
+        toast(`❌ Invalid IP address: ${ip}`, 'error');
+        return false;
+      }
+
+      const confirmed = await showModal({
+        title: `Add to ${listLabel}`,
+        body:  `Add IP <span class="modal-ip">${ip}</span> to the <strong style="color:${listColor}">${listLabel}</strong>?`
+               + (note ? `<br><span style="font-size:11px;color:var(--text-dim)">Note: ${note}</span>` : ''),
+        confirmLabel: `Add to ${listLabel}`,
+        danger: list === 'blacklist',
+      });
+      if (!confirmed) return false;
+
+      const res  = await fetch(API + `/api/${list}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip, note }),
+      });
+      const data = await res.json();
+
+      if (data.already) {
+        toast(`ℹ️ ${ip} is already in the ${listLabel}`, 'info');
+        return false;
+      }
+
+      if (res.status === 409 && data.conflict) {
+        const oppLabel = data.conflict === 'whitelist' ? 'Whitelist' : 'Blacklist';
+        const oppColor = data.conflict === 'whitelist' ? 'var(--success)' : 'var(--danger)';
+        const move = await showModal({
+          title: `⚠️ Conflict Detected`,
+          body:  `<span class="modal-ip">${ip}</span> is currently in the
+                  <strong style="color:${oppColor}">${oppLabel}</strong>.<br><br>
+                  An IP cannot be in both lists. Do you want to
+                  <strong>move it</strong> to the <strong style="color:${listColor}">${listLabel}</strong> instead?`,
+          confirmLabel: `Move to ${listLabel}`,
+          danger: list === 'blacklist',
+        });
+        if (!move) return false;
+
+        const forceRes  = await fetch(API + `/api/${list}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ip, note, force: true }),
+        });
+        const forceData = await forceRes.json();
+        if (!forceData.ok) {
+          toast(`❌ Error: ${forceData.error || 'Unknown error'}`, 'error');
+          return false;
+        }
+        toast(`↔️ ${ip} moved from ${oppLabel} → ${listLabel}`, list === 'whitelist' ? 'success' : 'warn');
+        loadWhitelist(); loadBlacklist();
+        return true;
+      }
+
+      if (!res.ok) {
+        toast(`❌ ${data.error || 'Failed to add IP'}`, 'error');
+        return false;
+      }
+
+      toast(`✅ ${ip} added to ${listLabel}`, list === 'whitelist' ? 'success' : 'warn');
+      addLog(`[${list}] ${ip} added`, list === 'whitelist' ? 'success' : 'warn');
+      list === 'whitelist' ? loadWhitelist() : loadBlacklist();
+      return true;
+    }
+
+    async function loadWhitelist() {
+      const data = await fetch(API + '/api/whitelist').then(r => r.json());
+      document.getElementById('whitelist-items').innerHTML = data.length
+        ? data.map(item => `
+          <div class="list-item">
+            <div>
+              <div class="list-ip" style="color:var(--success)">${item.ip}</div>
+              <div class="list-meta">${item.note || 'No note'} · Added ${item.added_at}</div>
+            </div>
+            <button class="btn-sm" onclick="removeFromList('whitelist','${item.ip}')" style="color:var(--danger)">Remove</button>
+          </div>`).join('')
+        : '<div class="empty-state">No whitelisted IPs</div>';
+    }
+
+    async function loadBlacklist() {
+      const data = await fetch(API + '/api/blacklist').then(r => r.json());
+      document.getElementById('blacklist-items').innerHTML = data.length
+        ? data.map(item => `
+          <div class="list-item">
+            <div>
+              <div class="list-ip" style="color:var(--danger)">${item.ip}</div>
+              <div class="list-meta">${item.note || 'No note'} · Added ${item.added_at}</div>
+            </div>
+            <button class="btn-sm" onclick="removeFromList('blacklist','${item.ip}')" style="color:var(--danger)">Remove</button>
+          </div>`).join('')
+        : '<div class="empty-state">No blacklisted IPs</div>';
+    }
+
+    async function addToWhitelist() {
+      const ip   = document.getElementById('wl-ip').value.trim();
+      const note = document.getElementById('wl-note').value.trim();
+      if (!ip) { toast('⚠️ Please enter an IP address', 'warn'); return; }
+      const ok = await addToList('whitelist', ip, note);
+      if (ok) { document.getElementById('wl-ip').value = ''; document.getElementById('wl-note').value = ''; }
+    }
+
+    async function addToBlacklist() {
+      const ip   = document.getElementById('bl-ip').value.trim();
+      const note = document.getElementById('bl-note').value.trim();
+      if (!ip) { toast('⚠️ Please enter an IP address', 'warn'); return; }
+      const ok = await addToList('blacklist', ip, note);
+      if (ok) { document.getElementById('bl-ip').value = ''; document.getElementById('bl-note').value = ''; }
+    }
+
+    async function removeFromList(list, ip) {
+      const listLabel = list === 'whitelist' ? 'Whitelist' : 'Blacklist';
+      const confirmed = await showModal({
+        title: `Remove from ${listLabel}`,
+        body:  `Remove <span class="modal-ip">${ip}</span> from the ${listLabel}?`,
+        confirmLabel: 'Remove',
+        danger: true,
+      });
+      if (!confirmed) return;
+      await fetch(API + `/api/${list}/${encodeURIComponent(ip)}`, { method: 'DELETE' });
+      toast(`🗑️ ${ip} removed from ${listLabel}`, 'info');
+      list === 'whitelist' ? loadWhitelist() : loadBlacklist();
+    }
+
+    async function quickAdd(list, ip) {
+      const note = window.prompt(`Optional note for ${ip}:`, '') ?? '';
+      if (note === null) return;
+      await addToList(list, ip, note);
+      refreshDashboard();
+    }
+
+    async function loadReports() {
+      const data = await fetch(API + '/api/reports').then(r => r.json());
+      document.getElementById('reports-list').innerHTML = data.length
+        ? data.map(r => `
+          <div class="report-card">
+            <div>
+              <div class="report-name">📄 ${r.filename}</div>
+              <div class="report-date">${r.date}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="report-size">${(r.size/1024).toFixed(1)} KB</span>
+              <a href="/api/reports/${encodeURIComponent(r.filename)}" target="_blank">
+                <button class="btn-primary">Open →</button>
+              </a>
+            </div>
+          </div>`).join('')
+        : '<div class="empty-state">No reports generated yet. Reports are auto-created every 24h at 08:00.</div>';
+    }
+
+    async function loadModules() {
+      const status  = await fetch(API + '/api/status').then(r => r.json());
+      const running = status.running;
+      const modules = [
+        { icon:'📡', name:'Log Tailer',       desc:'Streams Oracle auth.log via SSH',          active:running },
+        { icon:'🔍', name:'Parser',            desc:'Extracts IP, user, time from log lines',   active:running },
+        { icon:'🧠', name:'Anomaly Detector',  desc:'Detects brute-force patterns (TOFU)',      active:running },
+        { icon:'🌐', name:'Intel Collector',   desc:'AbuseIPDB + ipinfo.io enrichment',         active:running },
+        { icon:'📋', name:'Dossier Builder',   desc:'Formats full attack report',               active:running },
+        { icon:'📱', name:'Notifier',          desc:'Telegram alerts with rate-limiting',       active:running },
+        { icon:'🗄️', name:'Storage',           desc:'Persists alerts to SQLite DB',             active:running },
+        { icon:'✅', name:'Whitelist',         desc:'Suppresses alerts for trusted IPs',        active:running },
+        { icon:'📊', name:'Reporter',          desc:'Generates daily HTML attack reports',      active:running },
+        { icon:'🔌', name:'Express API',       desc:'REST API + WebSocket server',              active:true    },
+        { icon:'⚡', name:'WebSocket',         desc:'Real-time browser push',                   active:true    },
+      ];
+      document.getElementById('module-cards').innerHTML = modules.map(m => `
+        <div class="module-card ${m.active?'active':''}">
+          <div class="module-icon">${m.icon}</div>
+          <div class="module-name">${m.name}</div>
+          <div class="module-desc">${m.desc}</div>
+          <div class="module-status ${m.active?'on':'off'}">
+            <span>${m.active?'●':'○'}</span>
+            ${m.active?'Running':'Stopped'}
+          </div>
+        </div>`).join('');
+    }
+
+    connectWS();
+    refreshDashboard();
+    loadAlerts();
+
+    setInterval(() => { refreshDashboard(); }, 15000);
+  </script>
+</body>
+</html>

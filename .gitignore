@@ -1,0 +1,14 @@
+.env
+alerts.db
+*.db
+*.db-shm
+*.db-wal
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+reports/
+*.key
+*.pem
+.DS_Store
+known_hosts

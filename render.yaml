@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: log-auditor-server
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: ORACLE_IP
+        sync: false
+      - key: ORACLE_SSH_KEY
+        sync: false
+      - key: ABUSEIPDB_KEY
+        sync: false
+      - key: IPINFO_TOKEN
+        sync: false
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: PORT
+        value: 3000
+
+  - type: worker
+    name: log-auditor-python
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python auditor.py
+    envVars:
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: ORACLE_IP
+        sync: false
+      - key: ORACLE_SSH_KEY
+        sync: false
+      - key: ABUSEIPDB_KEY
+        sync: false
+      - key: IPINFO_TOKEN
+        sync: false
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
