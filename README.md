@@ -16,8 +16,13 @@
 
 > Dashboard — Attack Intelligence Overview
 
-![Dashboard](https://via.placeholder.com/900x450/090d12/4da6ff?text=SentinelWatch+Dashboard)
+![Dashboard](assets/assets/Screenshot 2026-06-24 100202.png)
 
+**Alerts Table**
+![Alerts](assets/assets/Screenshot 2026-06-24 100221.png)
+
+**Live Feed**
+![Live Feed](assets/assets/Screenshot 2026-06-24 100213.png)
 ---
 
 ## ✨ Features
