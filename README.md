@@ -16,13 +16,13 @@
 
 > Dashboard — Attack Intelligence Overview
 
-![Dashboard](assetsScreenshot 2026-06-24 100202.png)
+![Dashboard](assets/Screenshot%202026-06-24%20100202.png)
 
 > Alerts Table
-![Alerts](assets/Screenshot 2026-06-24 100221.png)
+![Alerts](assets/Screenshot%202026-06-24%20100221.png)
 
 > Live Feed
-![Live Feed](assets/Screenshot 2026-06-24 100213.png)
+![Live Feed](assets/Screenshot%202026-06-24%20100213.png)
 ---
 
 ## ✨ Features
