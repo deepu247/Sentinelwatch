@@ -2,8 +2,8 @@ import paramiko
 import time
 import os
 
-ORACLE_IP   = os.environ["ORACLE_IP"]
-ORACLE_KEY  = os.environ["ORACLE_SSH_KEY"]
+SERVER_IP   = os.environ["SERVER_IP"]
+SERVER_KEY  = os.environ["SERVER_SSH_KEY"]
 
 KNOWN_HOSTS_PATH = os.environ.get("KNOWN_HOSTS_PATH", "known_hosts")
 
@@ -32,17 +32,17 @@ def _load_client() -> paramiko.SSHClient:
     client.set_missing_host_key_policy(_TofuPolicy(KNOWN_HOSTS_PATH))
     return client
 
-def stream_oracle_logs():
+def stream_server_logs():
     retry_delay = 10
     while True:
         client = None
         try:
-            print(f"[tailer] Connecting to {ORACLE_IP}...")
+            print(f"[tailer] Connecting to {SERVER_IP}...")
             client = _load_client()
             client.connect(
-                hostname=ORACLE_IP,
+                hostname=SERVER_IP,
                 username="ubuntu",
-                key_filename=ORACLE_KEY,
+                key_filename=SERVER_KEY,
                 timeout=30,
             )
             print("[tailer] Connected. Tailing /var/log/auth.log ...")

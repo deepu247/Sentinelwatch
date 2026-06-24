@@ -1,7 +1,7 @@
 import time
 from datetime import datetime, timedelta
 
-from modules.tailer import stream_oracle_logs
+from modules.tailer import stream_server_logs
 from modules.parser import parse_line
 from modules.anomaly_detector import detect
 from modules.intel_collector import collect_intel, upgrade_severity
@@ -26,7 +26,7 @@ def main():
 
     next_daily = _next_daily_time()
 
-    for raw_line in stream_oracle_logs():
+    for raw_line in stream_server_logs():
         if datetime.now() >= next_daily:
             try:
                 stats   = get_daily_stats(conn)

@@ -9,9 +9,9 @@ services:
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
-      - key: ORACLE_IP
+      - key: SERVER_IP
         sync: false
-      - key: ORACLE_SSH_KEY
+      - key: SERVER_SSH_KEY
         sync: false
       - key: ABUSEIPDB_KEY
         sync: false
@@ -34,9 +34,9 @@ services:
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
-      - key: ORACLE_IP
+      - key: SERVER_IP
         sync: false
-      - key: ORACLE_SSH_KEY
+      - key: SERVER_SSH_KEY
         sync: false
       - key: ABUSEIPDB_KEY
         sync: false

@@ -55,7 +55,7 @@ def send_startup_message() -> None:
     try:
         send_telegram(
             "[SHIELD] <b>Security Lab Auditor Started</b>\n"
-            "Monitoring Oracle server for attacks...\n"
+            "Monitoring server for attacks...\n"
             "All modules active [OK]",
             ip="_startup",
             severity="LOW",

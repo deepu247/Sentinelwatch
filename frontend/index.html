@@ -817,7 +817,7 @@
       const status  = await fetch(API + '/api/status').then(r => r.json());
       const running = status.running;
       const modules = [
-        { icon:'📡', name:'Log Tailer',       desc:'Streams Oracle auth.log via SSH',          active:running },
+        { icon:'📡', name:'Log Tailer',       desc:'Streams remote server auth.log via SSH',          active:running },
         { icon:'🔍', name:'Parser',            desc:'Extracts IP, user, time from log lines',   active:running },
         { icon:'🧠', name:'Anomaly Detector',  desc:'Detects brute-force patterns (TOFU)',      active:running },
         { icon:'🌐', name:'Intel Collector',   desc:'AbuseIPDB + ipinfo.io enrichment',         active:running },
