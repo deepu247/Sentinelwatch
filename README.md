@@ -29,17 +29,16 @@
 - 🔑 **Privilege escalation** — detects sudo/admin group modifications
 - 🌐 **IP enrichment** — AbuseIPDB + ipinfo for geo, abuse score, TOR/VPN flags
 - 📲 **Telegram notifications** — instant alerts with rate limiting
-- 📊 **Daily summaries** — Telegram + HTML report every 24 hours
+- 📊 **Daily summaries** — Telegram summary every 24 hours
 - 🖥️ **Live web dashboard** — real-time alerts via WebSocket
 - ✅ **Whitelist / Blacklist** — manage trusted and blocked IPs from the UI
-- 📁 **Report browser** — view and download daily HTML reports
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-  Oracle/Ubuntu Server
+  Remote Linux Server
   /var/log/auth.log
          │
          │  SSH (Paramiko)
@@ -72,8 +71,6 @@ log-auditor/
 ├── server.js               # Express server + WebSocket + API
 ├── package.json
 ├── requirements.txt
-├── render.yaml             # Render deployment blueprint
-├── known_hosts             # SSH host key pinning
 ├── frontend/
 │   └── index.html          # Dashboard UI
 ├── modules/
@@ -82,7 +79,6 @@ log-auditor/
 │   ├── intel_collector.py  # AbuseIPDB + ipinfo enrichment
 │   ├── notifier.py         # Telegram notifications
 │   ├── parser.py           # Auth log line parser
-│   ├── reporter.py         # Daily HTML report generator
 │   ├── storage.py          # Turso HTTP API database layer
 │   ├── tailer.py           # SSH log tailer (Paramiko)
 │   └── whitelist.py        # Whitelist/blacklist helpers
@@ -115,8 +111,8 @@ Create a `.env` file:
 TURSO_DATABASE_URL=libsql://your-database.turso.io
 TURSO_AUTH_TOKEN=your_turso_auth_token
 
-ORACLE_IP=your_server_ip
-ORACLE_SSH_KEY=/path/to/private-key.pem
+SERVER_IP=your_server_ip
+SERVER_SSH_KEY=/path/to/private-key.pem
 
 ABUSEIPDB_KEY=your_abuseipdb_key
 IPINFO_TOKEN=your_ipinfo_token
@@ -125,8 +121,6 @@ TELEGRAM_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_telegram_chat_id
 
 PORT=3000
-REPORTS_DIR=reports
-KNOWN_HOSTS_PATH=known_hosts
 ```
 
 ### 4. Start the server
@@ -174,5 +168,3 @@ Severity is upgraded based on AbuseIPDB score:
 | ≥ 20% | MEDIUM |
 
 ---
-
-</p>
