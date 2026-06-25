@@ -137,7 +137,7 @@ def _send_raw(message: str) -> bool:
 
     try:
         response = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage",
             data={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"},
             timeout=10,
         )
@@ -166,8 +166,8 @@ def queue_alert(alert: dict, intel: dict) -> None:
     ip         = alert["ip"]
     username   = alert.get("user") or "unknown"
     severity   = alert["severity"]
-    alert_type = alert.get("alert_type", "unknown")
-    attempts   = alert.get("attempts", 1)
+    alert_type = alert.get("alert", "unknown")
+    attempts   = alert.get("count", 1)
     now        = time.time()
 
     # Check and flush any other IPs that have timed out
