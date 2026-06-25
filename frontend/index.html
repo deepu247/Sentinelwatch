@@ -385,6 +385,12 @@
         <h2>📊 Daily Attack Reports</h2>
         <p>Auto-generated HTML reports every 24h at 08:00. Click to open.</p>
       </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <p style="color:var(--text-dim);font-size:13px">Auto-generated HTML reports every 24h at 08:00. Click to open.</p>
+        <button id="instant-report-btn" class="btn-primary" onclick="generateInstantReport()" style="display:flex;align-items:center;gap:6px;padding:8px 18px;font-size:13px">
+          ⚡ Instant Report
+        </button>
+      </div>
       <div id="reports-list"><div class="empty-state">Loading reports...</div></div>
     </div>
 
@@ -846,6 +852,28 @@
     loadAlerts();
 
     setInterval(() => { refreshDashboard(); }, 15000);
-  </script>
+  
+    async function generateInstantReport() {
+      const btn = document.getElementById('instant-report-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Generating...';
+      try {
+        const res = await fetch(API + '/api/reports/instant', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('✅ Report generated: ' + data.filename, 'success');
+          loadReports();
+          window.open('/api/reports/' + encodeURIComponent(data.filename), '_blank');
+        } else {
+          showToast('❌ Failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (e) {
+        showToast('❌ Error: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '⚡ Instant Report';
+      }
+    }
+</script>
 </body>
 </html>

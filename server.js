@@ -274,6 +274,32 @@ app.get('/api/reports', (req, res) => {
   res.json(files);
 });
 
+
+app.post('/api/reports/instant', (req, res) => {
+  const { spawn: spawnPy } = require('child_process');
+  const script = [
+    'import sys; sys.path.insert(0, ".")',
+    'from modules.storage import init_db',
+    'from modules.reporter import generate_report',
+    'import os',
+    'conn = init_db()',
+    'filepath = generate_report(conn)',
+    'print(os.path.basename(filepath))',
+  ].join(';');
+  const child = spawnPy('python', ['-c', script], {
+    cwd: __dirname,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+  });
+  let out = '', err = '';
+  child.stdout.on('data', d => { out += d.toString(); });
+  child.stderr.on('data', d => { err += d.toString(); });
+  child.on('close', code => {
+    if (code !== 0) return res.status(500).json({ error: err.trim() || 'Report generation failed' });
+    const filename = out.trim().split('\n').pop();
+    broadcast({ type: 'new_report', filename });
+    res.json({ ok: true, filename });
+  });
+});
 app.get('/api/reports/:filename', (req, res) => {
   const filename = path.basename(req.params.filename);
   const filepath = path.join(REPORTS_DIR, filename);

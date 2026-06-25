@@ -5,13 +5,17 @@ from modules.tailer import stream_server_logs
 from modules.parser import parse_line
 from modules.anomaly_detector import detect
 from modules.intel_collector import collect_intel, upgrade_severity
-from modules.dossier_builder import build_dossier
-from modules.notifier import send_telegram, send_startup_message, send_daily_summary
+from modules.notifier import queue_alert, send_startup_message, send_daily_summary
 from modules.storage import init_db, save_alert, get_daily_stats, get_top_ips
-from modules.whitelist import is_whitelisted
+from modules.whitelist import is_whitelisted, is_blacklisted, add_to_blacklist
 from modules.reporter import generate_report
 
-DAILY_SUMMARY_HOUR = 8 
+DAILY_SUMMARY_HOUR = 8
+
+# Auto-blacklist thresholds
+AUTO_BLACKLIST_ABUSE_SCORE   = 60   # auto-blacklist if AbuseIPDB score >= this %
+AUTO_BLACKLIST_TOTAL_REPORTS = 100  # auto-blacklist if total reports >= this
+
 
 def _next_daily_time() -> datetime:
     now    = datetime.now()
@@ -19,6 +23,7 @@ def _next_daily_time() -> datetime:
     if target <= now:
         target += timedelta(days=1)
     return target
+
 
 def main():
     conn = init_db()
@@ -50,16 +55,58 @@ def main():
         if not alert:
             continue
 
-        if is_whitelisted(conn, alert["ip"]):
-            print(f"[auditor] Skipping whitelisted IP: {alert['ip']}")
+        ip = alert["ip"]
+
+        if is_whitelisted(conn, ip):
+            print(f"[auditor] Skipping whitelisted IP: {ip}")
             continue
 
-        intel = collect_intel(alert["ip"])
-        alert["severity"] = upgrade_severity(alert, intel)
+        # --- Blacklist check: skip AbuseIPDB API call if already blacklisted ---
+        if is_blacklisted(conn, ip):
+            print(f"[auditor] Known blacklisted IP: {ip} — skipping intel API call")
+            intel = {
+                "abuse_score":   100,
+                "total_reports": 999,
+                "last_seen":     "known-bad",
+                "country":       None,
+                "city":          None,
+                "org":           None,
+                "is_tor":        False,
+                "is_vpn":        False,
+            }
+            alert["severity"] = "CRITICAL"
+        else:
+            intel = collect_intel(ip)
+            alert["severity"] = upgrade_severity(alert, intel)
 
-        report = build_dossier(alert, intel)
-        send_telegram(report, ip=alert["ip"], severity=alert["severity"])
+            # --- Auto-blacklist triage: store REAL intel data in the note ---
+            abuse_score   = intel.get("abuse_score",   0) or 0
+            total_reports = intel.get("total_reports", 0) or 0
+            if abuse_score >= AUTO_BLACKLIST_ABUSE_SCORE or total_reports >= AUTO_BLACKLIST_TOTAL_REPORTS:
+                country  = intel.get("country") or "Unknown"
+                city     = intel.get("city")    or ""
+                org      = intel.get("org")     or "Unknown"
+                is_tor   = intel.get("is_tor",  False)
+                is_vpn   = intel.get("is_vpn",  False)
+                last_seen = intel.get("last_seen") or "N/A"
+                location = f"{country}" + (f", {city}" if city else "")
+                flags    = ", ".join(filter(None, [
+                    "TOR" if is_tor else "",
+                    "VPN" if is_vpn else "",
+                ])) or "none"
+                note = (
+                    f"Auto-blacklisted | "
+                    f"abuse={abuse_score}% | reports={total_reports} | "
+                    f"location={location} | org={org} | "
+                    f"flags={flags} | last_seen={last_seen}"
+                )
+                add_to_blacklist(conn, ip, note)
+                print(f"[auditor] Auto-blacklisted {ip}: {note}")
+
+        # --- Queue alert for batched Telegram notification ---
+        queue_alert(alert, intel)
         save_alert(conn, alert, intel)
+
 
 if __name__ == "__main__":
     main()
