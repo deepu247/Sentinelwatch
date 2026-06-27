@@ -273,21 +273,43 @@ def send_report_to_telegram(filepath: str, stats: dict) -> bool:
     )
     _send_raw(summary)
 
-    # Send the HTML file as a Telegram document
+    # Send the HTML file as a .zip (Telegram blocks raw .html uploads)
+    import os as _os
+    import zipfile
+    import tempfile
+
+    zip_path = None
     try:
-        import os as _os
-        with open(filepath, "rb") as f:
+        # Create a temp zip containing the HTML report
+        base_name  = _os.path.basename(filepath)              # e.g. report_2026-06-27_1930.html
+        zip_name   = base_name.replace(".html", ".zip")       # e.g. report_2026-06-27_1930.zip
+        zip_path   = _os.path.join(_os.path.dirname(filepath), zip_name)
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(filepath, base_name)
+
+        with open(zip_path, "rb") as f:
             resp = requests.post(
                 "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendDocument",
-                data={"chat_id": TELEGRAM_CHAT_ID, "caption": "\U0001f4c4 Full HTML Security Report"},
-                files={"document": (_os.path.basename(filepath), f, "text/html")},
+                data={
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "caption": "\U0001f4c4 Full Security Report (open the HTML inside)",
+                },
+                files={"document": (zip_name, f, "application/zip")},
                 timeout=30,
             )
         result = resp.json()
         if result.get("ok"):
-            print("[notifier] Report file sent to Telegram.")
+            print("[notifier] Report zip sent to Telegram.")
             return True
-        print(f"[notifier] ERROR sending report file: {result.get('description')}")
+        print(f"[notifier] ERROR sending report zip: {result.get('description')}")
     except Exception as e:
-        print(f"[notifier] ERROR sending report file: {e}")
+        print(f"[notifier] ERROR sending report zip: {e}")
+    finally:
+        # Clean up temp zip
+        if zip_path and _os.path.exists(zip_path):
+            try:
+                _os.remove(zip_path)
+            except Exception:
+                pass
     return False
