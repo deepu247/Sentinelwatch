@@ -276,17 +276,7 @@ app.get('/api/reports', (req, res) => {
 
 
 app.post('/api/reports/instant', (req, res) => {
-  const { spawn: spawnPy } = require('child_process');
-  const script = [
-    'import sys; sys.path.insert(0, ".")',
-    'from modules.storage import init_db',
-    'from modules.reporter import generate_report',
-    'import os',
-    'conn = init_db()',
-    'filepath = generate_report(conn)',
-    'print(os.path.basename(filepath))',
-  ].join(';');
-  const child = spawnPy('python', ['-c', script], {
+  const child = spawn('python3', ['instant_report.py'], {
     cwd: __dirname,
     env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
   });
@@ -294,8 +284,12 @@ app.post('/api/reports/instant', (req, res) => {
   child.stdout.on('data', d => { out += d.toString(); });
   child.stderr.on('data', d => { err += d.toString(); });
   child.on('close', code => {
-    if (code !== 0) return res.status(500).json({ error: err.trim() || 'Report generation failed' });
+    if (code !== 0) {
+      console.error('[instant-report] Error:', err.trim());
+      return res.status(500).json({ error: err.trim() || 'Report generation failed' });
+    }
     const filename = out.trim().split('\n').pop();
+    console.log('[instant-report] Generated:', filename);
     broadcast({ type: 'new_report', filename });
     res.json({ ok: true, filename });
   });

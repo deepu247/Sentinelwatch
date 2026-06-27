@@ -59,6 +59,47 @@ def is_blacklisted(conn, ip: str) -> bool:
     return row is not None
 
 
+def get_blacklist_intel(conn, ip: str) -> dict:
+    """
+    Parse the stored blacklist note to reconstruct the original intel dict.
+    Note format: "Auto-blacklisted | abuse=76% | reports=42 | location=CN, Beijing | org=China Telecom | flags=VPN | last_seen=..."
+    """
+    import re
+    row = conn.execute("SELECT note FROM blacklist WHERE ip = ?", (ip,)).fetchone()
+    intel = {
+        "abuse_score":    100,
+        "total_reports":  999,
+        "country":        "Unknown",
+        "city":           "",
+        "org":            "Unknown",
+        "is_tor":         False,
+        "is_vpn":         False,
+        "is_blacklisted": True,
+    }
+    if not row or not row[0]:
+        return intel
+    note = row[0]
+    m = re.search(r'abuse=(\d+)%', note)
+    if m:
+        intel["abuse_score"] = int(m.group(1))
+    m = re.search(r'reports=(\d+)', note)
+    if m:
+        intel["total_reports"] = int(m.group(1))
+    m = re.search(r'location=([^|]+)', note)
+    if m:
+        loc = m.group(1).strip()
+        parts = loc.split(',', 1)
+        intel["country"] = parts[0].strip() or "Unknown"
+        intel["city"]    = parts[1].strip() if len(parts) > 1 else ""
+    m = re.search(r'org=([^|]+)', note)
+    if m:
+        intel["org"] = m.group(1).strip() or "Unknown"
+    flags_lower = note.lower()
+    intel["is_tor"] = "tor" in flags_lower
+    intel["is_vpn"] = "vpn" in flags_lower
+    return intel
+
+
 def get_blacklist(conn) -> list:
     rows = conn.execute(
         "SELECT ip, note, added_at FROM blacklist ORDER BY added_at DESC"

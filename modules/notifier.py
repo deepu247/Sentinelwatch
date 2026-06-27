@@ -6,8 +6,11 @@ from datetime import datetime
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-GLOBAL_MIN_INTERVAL = 3    # minimum seconds between any two Telegram messages
-BATCH_TIMEOUT       = 120  # seconds — max wait before a batch is force-flushed
+GLOBAL_MIN_INTERVAL = 3   # minimum seconds between any two Telegram messages
+BATCH_TIMEOUT       = 60  # seconds — flush batch if no username change within 1 min
+
+# Alert types that must flush immediately (genuinely dangerous, not just brute force)
+IMMEDIATE_ALERT_TYPES = {"ROOT_ATTACK", "PRIVILEGE_ESCALATION", "SUCCESS_AFTER_FAILURES", "NEW_USER_CREATED"}
 
 _last_sent_global: float = 0.0
 
@@ -61,30 +64,37 @@ def _build_batch_message(ip: str, buf: dict, reason: str) -> str:
     sev_emoji = {"CRITICAL": "\U0001f6a8", "HIGH": "\U0001f534",
                  "MEDIUM": "\U0001f7e1", "LOW": "\U0001f7e2"}.get(severity, "\u26aa")
 
-    abuse_score   = intel.get("abuse_score",   0) or 0
-    total_reports = intel.get("total_reports", 0) or 0
-    country       = intel.get("country") or "\u2014"
-    city          = intel.get("city")    or ""
-    org           = intel.get("org")     or "\u2014"
-    is_tor        = intel.get("is_tor",  False)
-    is_vpn        = intel.get("is_vpn",  False)
+    abuse_score    = intel.get("abuse_score",   0) or 0
+    total_reports  = intel.get("total_reports", 0) or 0
+    country        = intel.get("country") or "\u2014"
+    city           = intel.get("city")    or ""
+    org            = intel.get("org")     or "\u2014"
+    is_tor         = intel.get("is_tor",  False)
+    is_vpn         = intel.get("is_vpn",  False)
+    is_blacklisted = intel.get("is_blacklisted", False)
 
     location = f"{country}" + (f" | {city}" if city else "")
-    flags = " ".join(filter(None, [
-        "\U0001f534 TOR" if is_tor else "",
-        "\U0001f535 VPN" if is_vpn else "",
-    ])) or "\u2014"
+    flags_list = []
+    if is_blacklisted:
+        flags_list.append("\u26d4 BLACKLISTED")
+    if is_tor:
+        flags_list.append("\U0001f534 TOR")
+    if is_vpn:
+        flags_list.append("\U0001f535 VPN")
+    flags = " ".join(flags_list) or "\u2014"
 
     flush_reason = {
         "username_changed": "\U0001f504 New username detected",
-        "timeout":          "\u23f0 Batch timeout (2 min)",
-        "critical":         "\U0001f6a8 Critical alert",
+        "timeout":          "\u23f0 Batch timeout (1 min)",
+        "critical":         "\U0001f6a8 Critical alert (immediate)",
     }.get(reason, reason)
 
     alert_type_display = alert_type.replace("_", " ").title()
 
+    blacklist_badge = " \u26d4 <b>BLACKLISTED IP</b>" if is_blacklisted else ""
+
     return (
-        f"{sev_emoji} <b>{severity} \u2014 {alert_type_display} Batch</b>\n"
+        f"{sev_emoji} <b>{severity} \u2014 {alert_type_display} Batch</b>{blacklist_badge}\n"
         f"{'=' * 38}\n"
         f"\U0001f310 <b>IP Address</b>   : <code>{ip}</code>\n"
         f"\U0001f3f3\ufe0f <b>Location</b>    : {location}\n"
@@ -185,7 +195,8 @@ def queue_alert(alert: dict, intel: dict) -> None:
             _buffers[ip] = _new_buffer(username, severity, alert_type, intel, attempts, now)
         else:
             # Same username — accumulate into existing batch
-            buf["count"]    += attempts
+            # Use +1 per event (not += attempts which is cumulative from anomaly_detector)
+            buf["count"]    += 1
             buf["last_seen"] = now
             buf["severity"]  = _higher_severity(severity, buf["severity"])
             buf["intel"]     = intel   # keep intel fresh (latest lookup)
@@ -193,8 +204,9 @@ def queue_alert(alert: dict, intel: dict) -> None:
     else:
         _buffers[ip] = _new_buffer(username, severity, alert_type, intel, attempts, now)
 
-    # CRITICAL: flush immediately regardless
-    if severity == "CRITICAL":
+    # Only flush immediately for truly dangerous events (not brute force, even if CRITICAL)
+    # BRUTE_FORCE with high abuse score gets CRITICAL via upgrade_severity but should still batch
+    if severity == "CRITICAL" and alert_type in IMMEDIATE_ALERT_TYPES:
         _flush_ip(ip, reason="critical")
 
 
@@ -224,3 +236,58 @@ def send_daily_summary(total: int, critical: int, top_ips: list) -> None:
         f"\U0001f6a8 Critical Alerts : {critical}\n\n"
         f"\U0001f30d Top Attackers:\n{top_list}"
     )
+
+
+def send_report_to_telegram(filepath: str, stats: dict) -> bool:
+    """
+    Send the generated HTML report to Telegram:
+      1. A formatted summary message with key stats.
+      2. The HTML report file as a document attachment.
+    """
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("[notifier] WARNING: Telegram credentials not set — cannot send report.")
+        return False
+
+    total      = stats.get("total",      0)
+    critical   = stats.get("critical",   0)
+    high       = stats.get("high",       0)
+    medium     = stats.get("medium",     0)
+    low        = stats.get("low",        0)
+    unique_ips = stats.get("unique_ips", 0)
+    generated  = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    summary = (
+        f"\U0001f4cb <b>Instant Security Report</b>\n"
+        f"{'=' * 34}\n"
+        f"\U0001f4c5 <b>Generated</b>   : {generated}\n"
+        f"\U0001f4ca <b>Period</b>      : Last 24 hours\n"
+        f"\n"
+        f"\U0001f6a8 <b>Critical</b>   : {critical}\n"
+        f"\U0001f534 <b>High</b>       : {high}\n"
+        f"\U0001f7e1 <b>Medium</b>     : {medium}\n"
+        f"\U0001f7e2 <b>Low</b>        : {low}\n"
+        f"\U0001f4e2 <b>Total</b>      : {total}\n"
+        f"\U0001f310 <b>Unique IPs</b> : {unique_ips}\n"
+        f"\n"
+        f"\U0001f4ce Full report attached below."
+    )
+    _send_raw(summary)
+
+    # Send the HTML file as a Telegram document
+    try:
+        import os as _os
+        with open(filepath, "rb") as f:
+            resp = requests.post(
+                "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendDocument",
+                data={"chat_id": TELEGRAM_CHAT_ID, "caption": "\U0001f4c4 Full HTML Security Report"},
+                files={"document": (_os.path.basename(filepath), f, "text/html")},
+                timeout=30,
+            )
+        result = resp.json()
+        if result.get("ok"):
+            print("[notifier] Report file sent to Telegram.")
+            return True
+        print(f"[notifier] ERROR sending report file: {result.get('description')}")
+    except Exception as e:
+        print(f"[notifier] ERROR sending report file: {e}")
+    return False

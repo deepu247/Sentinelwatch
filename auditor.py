@@ -7,7 +7,7 @@ from modules.anomaly_detector import detect
 from modules.intel_collector import collect_intel, upgrade_severity
 from modules.notifier import queue_alert, send_startup_message, send_daily_summary
 from modules.storage import init_db, save_alert, get_daily_stats, get_top_ips
-from modules.whitelist import is_whitelisted, is_blacklisted, add_to_blacklist
+from modules.whitelist import is_whitelisted, is_blacklisted, add_to_blacklist, get_blacklist_intel
 from modules.reporter import generate_report
 
 DAILY_SUMMARY_HOUR = 8
@@ -63,18 +63,11 @@ def main():
 
         # --- Blacklist check: skip AbuseIPDB API call if already blacklisted ---
         if is_blacklisted(conn, ip):
-            print(f"[auditor] Known blacklisted IP: {ip} — skipping intel API call")
-            intel = {
-                "abuse_score":   100,
-                "total_reports": 999,
-                "last_seen":     "known-bad",
-                "country":       None,
-                "city":          None,
-                "org":           None,
-                "is_tor":        False,
-                "is_vpn":        False,
-            }
-            alert["severity"] = "CRITICAL"
+            print(f"[auditor] Known blacklisted IP: {ip} — skipping intel API call, using stored intel")
+            # Restore REAL intel from the blacklist note (country, city, org, abuse, flags)
+            # so Telegram still shows full information without any new API call.
+            # Do NOT override severity — keep original so batching works correctly.
+            intel = get_blacklist_intel(conn, ip)
         else:
             intel = collect_intel(ip)
             alert["severity"] = upgrade_severity(alert, intel)
