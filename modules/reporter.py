@@ -1,5 +1,4 @@
 import os
-import sqlite3
 from datetime import datetime
 
 REPORTS_DIR = os.environ.get("REPORTS_DIR", "reports")
@@ -49,7 +48,7 @@ tr:hover td { background: rgba(77,166,255,.04); }
 """
 
 
-def generate_report(conn: sqlite3.Connection) -> str:
+def generate_report(conn) -> str:
     now      = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%B %d, %Y \u2014 %H:%M")

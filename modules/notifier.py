@@ -1,10 +1,11 @@
 """
 notifier.py  —  Telegram alert sender with batching
-Fixes:
-  1. Flush thread now auto-starts at module import
-  2. CRITICAL/HIGH alerts send immediately (no batching)
-  3. URL construction fixed
-  4. Correct alert dict keys (alert, count)
+Fixes applied:
+  1. Added send_startup_message() — was missing, auditor.py called it on boot
+  2. Added send_daily_summary()   — was missing, auditor.py called it daily
+  3. Flush thread auto-starts at module import
+  4. CRITICAL/HIGH alerts send immediately (no batching)
+  5. send_alert() accepts merged alert+intel dict
 """
 
 import os
@@ -117,6 +118,59 @@ def _build_message(buf: dict) -> str:
     return "\n".join(lines)
 
 
+# ── STARTUP & DAILY SUMMARY ─────────────────────────────────────────────
+def send_startup_message() -> None:
+    """Send a startup notification to Telegram. Called once when auditor launches."""
+    ts  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    msg = (
+        f"\U0001f6e1\ufe0f <b>SentinelWatch Started</b>\n"
+        f"\u251c Status  : <b>Online</b>\n"
+        f"\u2514 Time    : {ts}"
+    )
+    _send_raw(msg)
+
+
+def send_daily_summary(
+    total: int = 0,
+    critical: int = 0,
+    high: int = 0,
+    medium: int = 0,
+    low: int = 0,
+    unique_ips: int = 0,
+    top_ips: list = None,
+) -> None:
+    """Send a daily summary to Telegram. Called once per day at DAILY_SUMMARY_HOUR."""
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    top_ips = top_ips or []
+
+    top_section = ""
+    if top_ips:
+        lines = []
+        for row in top_ips[:5]:
+            # row may be a tuple (ip, hits) or (ip, country, abuse_score, hits)
+            if isinstance(row, (list, tuple)):
+                ip_val   = row[0]
+                hits_val = row[-1]
+            else:
+                ip_val   = str(row)
+                hits_val = "?"
+            lines.append(f"  \u2022 <code>{ip_val}</code> — {hits_val} hits")
+        top_section = "\n\U0001f30d Top IPs:\n" + "\n".join(lines)
+
+    msg = (
+        f"\U0001f4ca <b>SentinelWatch Daily Summary</b>\n"
+        f"\u251c \U0001f4c5 Period    : Last 24 hours ({ts})\n"
+        f"\u251c \U0001f6a8 Critical  : <b>{critical}</b>\n"
+        f"\u251c \U0001f534 High      : {high}\n"
+        f"\u251c \U0001f7e1 Medium    : {medium}\n"
+        f"\u251c \U0001f7e2 Low       : {low}\n"
+        f"\u251c \U0001f4e6 Total     : {total}\n"
+        f"\u2514 \U0001f310 Unique IPs: {unique_ips}"
+        f"{top_section}"
+    )
+    _send_raw(msg)
+
+
 # ── BATCH LOGIC ────────────────────────────────────────────────────────
 def _flush_ip(ip: str) -> None:
     """Flush one IP's batch and send the message."""
@@ -141,8 +195,9 @@ def _flush_all_expired() -> None:
 def send_alert(alert: dict) -> None:
     """
     Main entry point called by auditor.py.
-    Accepts keys: alert (or alert_type), severity, ip, user,
-    count, country, org, abuse_score, is_tor, is_vpn, is_blacklisted
+    Accepts merged alert+intel dict with keys:
+      alert (or alert_type), severity, ip, user, count,
+      country, org, abuse_score, is_tor, is_vpn, is_blacklisted
     """
     alert_type = alert.get("alert", alert.get("alert_type", "UNKNOWN"))
     severity   = alert.get("severity", "MEDIUM")
@@ -175,7 +230,7 @@ def send_alert(alert: dict) -> None:
     # ── BATCH: MEDIUM / LOW ──
     with BATCH_LOCK:
         if ip in _BATCH:
-            existing = _BATCH[ip]
+            existing  = _BATCH[ip]
             prev_user = existing.get("user", "")
 
             if user and user != prev_user:
@@ -277,7 +332,6 @@ def send_report_to_telegram(filepath: str, stats: dict) -> bool:
 
 
 # ── AUTO-START FLUSH THREAD ────────────────────────────────────────────
-# Runs automatically when this module is imported by auditor.py
 def _flush_loop():
     while True:
         time.sleep(FLUSH_INTERVAL)

@@ -35,6 +35,8 @@ def collect_intel(ip):
 
     try:
         token = f"?token={IPINFO_TOKEN}" if IPINFO_TOKEN else ""
+        # BUG FIX: was f"{{https://ipinfo.io/{ip}}}/json{token}" which produced
+        # literal braces {https://ipinfo.io/IP}/json — an invalid URL.
         r = requests.get(f"https://ipinfo.io/{ip}/json{token}", timeout=5)
         info = r.json()
         intel["city"]   = info.get("city",    intel["country"])

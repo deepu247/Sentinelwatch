@@ -5,7 +5,9 @@ from modules.tailer import stream_server_logs
 from modules.parser import parse_line
 from modules.anomaly_detector import detect
 from modules.intel_collector import collect_intel, upgrade_severity
-from modules.notifier import queue_alert, send_startup_message, send_daily_summary
+# BUG FIX: was importing queue_alert, send_startup_message, send_daily_summary
+# which do not exist in notifier.py. Corrected to actual function names.
+from modules.notifier import send_alert, send_startup_message, send_daily_summary
 from modules.storage import init_db, save_alert, get_daily_stats, get_top_ips
 from modules.whitelist import is_whitelisted, is_blacklisted, add_to_blacklist, get_blacklist_intel
 from modules.reporter import generate_report
@@ -39,6 +41,10 @@ def main():
                 send_daily_summary(
                     total=stats["total"],
                     critical=stats["critical"],
+                    high=stats["high"],
+                    medium=stats["medium"],
+                    low=stats["low"],
+                    unique_ips=stats["unique_ips"],
                     top_ips=top_ips,
                 )
                 report_path = generate_report(conn)
@@ -64,15 +70,12 @@ def main():
         # --- Blacklist check: skip AbuseIPDB API call if already blacklisted ---
         if is_blacklisted(conn, ip):
             print(f"[auditor] Known blacklisted IP: {ip} — skipping intel API call, using stored intel")
-            # Restore REAL intel from the blacklist note (country, city, org, abuse, flags)
-            # so Telegram still shows full information without any new API call.
-            # Do NOT override severity — keep original so batching works correctly.
             intel = get_blacklist_intel(conn, ip)
         else:
             intel = collect_intel(ip)
             alert["severity"] = upgrade_severity(alert, intel)
 
-            # --- Auto-blacklist triage: store REAL intel data in the note ---
+            # --- Auto-blacklist triage ---
             abuse_score   = intel.get("abuse_score",   0) or 0
             total_reports = intel.get("total_reports", 0) or 0
             if abuse_score >= AUTO_BLACKLIST_ABUSE_SCORE or total_reports >= AUTO_BLACKLIST_TOTAL_REPORTS:
@@ -96,8 +99,18 @@ def main():
                 add_to_blacklist(conn, ip, note)
                 print(f"[auditor] Auto-blacklisted {ip}: {note}")
 
-        # --- Queue alert for batched Telegram notification ---
-        queue_alert(alert, intel)
+        # BUG FIX: was queue_alert(alert, intel) — queue_alert does not exist
+        # and send_alert only accepts one dict. Merge intel into alert before sending.
+        merged_alert = {
+            **alert,
+            "country":        intel.get("country",        "Unknown"),
+            "org":            intel.get("org",            "Unknown"),
+            "abuse_score":    intel.get("abuse_score",    0),
+            "is_tor":         intel.get("is_tor",         False),
+            "is_vpn":         intel.get("is_vpn",         False),
+            "is_blacklisted": intel.get("is_blacklisted", False),
+        }
+        send_alert(merged_alert)
         save_alert(conn, alert, intel)
 
 

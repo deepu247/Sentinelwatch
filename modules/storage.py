@@ -139,15 +139,17 @@ def save_alert(conn: _Connection, alert: dict, intel: dict) -> None:
 def get_daily_stats(conn: _Connection) -> dict:
     row = conn.execute("""
         SELECT COUNT(*), SUM(severity='CRITICAL'), SUM(severity='HIGH'),
-               SUM(severity='MEDIUM'), SUM(severity='LOW')
+               SUM(severity='MEDIUM'), SUM(severity='LOW'),
+               COUNT(DISTINCT ip)
         FROM alerts WHERE timestamp > datetime('now', '-1 day')
     """).fetchone()
     return {
-        "total":    row[0] or 0,
-        "critical": row[1] or 0,
-        "high":     row[2] or 0,
-        "medium":   row[3] or 0,
-        "low":      row[4] or 0,
+        "total":      row[0] or 0,
+        "critical":   row[1] or 0,
+        "high":       row[2] or 0,
+        "medium":     row[3] or 0,
+        "low":        row[4] or 0,
+        "unique_ips": row[5] or 0,
     }
 
 
