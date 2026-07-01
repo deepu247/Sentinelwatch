@@ -205,8 +205,9 @@ def send_alert(alert: dict) -> None:
     user       = alert.get("user", "")
     count      = alert.get("count", alert.get("attempts", 1))
 
-    # ── IMMEDIATE: CRITICAL, HIGH, or special types ──
-    if severity in ("CRITICAL", "HIGH") or alert_type in IMMEDIATE_ALERT_TYPES:
+    # ── IMMEDIATE: CRITICAL severity OR special alert types only ──
+    # HIGH (e.g. BRUTE_FORCE) is intentionally batched to avoid Telegram spam.
+    if severity == "CRITICAL" or alert_type in IMMEDIATE_ALERT_TYPES:
         buf = {
             "alert_type":     alert_type,
             "severity":       severity,
@@ -254,7 +255,7 @@ def send_alert(alert: dict) -> None:
                     "first_seen":     time.time(),
                 }
             else:
-                existing["count"] += 1
+                existing["count"] = count   # use real count from anomaly_detector, not += 1
                 existing["severity"] = severity
         else:
             _BATCH[ip] = {
