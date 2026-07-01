@@ -64,7 +64,7 @@ def generate_report(conn) -> str:
         FROM alerts
         WHERE timestamp > datetime('now', '-1 day')
     """).fetchone()
-    total, critical, high, medium, low, unique_ips = [v or 0 for v in row]
+    total, critical, high, medium, low, unique_ips = [int(v or 0) for v in row]
 
     top_ips = conn.execute("""
         SELECT ip, country, org, MAX(abuse_score) AS abuse,
