@@ -21,7 +21,10 @@ TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIG ─────────────────────────────────────────────────────────────
-BATCH_TIMEOUT       = 60    # seconds before a batch force-flushes
+# Batch flushes every BATCH_WINDOW seconds from FIRST hit, regardless of
+# whether the attacker is still active. Continuous 5-min attack = 5 batches.
+# After each flush the window resets so the next hit starts a new 60s batch.
+BATCH_WINDOW        = 60    # seconds per batch window (fixed, not sliding)
 GLOBAL_MIN_INTERVAL = 3     # min seconds between any two Telegram sends
 FLUSH_INTERVAL      = 5     # how often flush thread checks batches
 
@@ -182,13 +185,24 @@ def _flush_ip(ip: str) -> None:
 
 
 def _flush_all_expired() -> None:
-    """Flush all batches whose timeout has expired."""
+    """Flush all batches whose 60s window has expired since first_seen.
+
+    Uses first_seen (fixed window) so a continuous attack produces one
+    Telegram message per 60s window:
+      - 1-min attack  -> 1 batch
+      - 5-min attack  -> 5 batches  (each showing the growing count)
+      - 10-min attack -> 10 batches
+    After flush the batch entry is removed; the next hit starts a new window.
+    Username changes flush immediately (handled in send_alert).
+    """
     now = time.time()
     with BATCH_LOCK:
-        expired = [ip for ip, buf in _BATCH.items()
-                   if now - buf["first_seen"] >= BATCH_TIMEOUT]
+        expired = [
+            ip for ip, buf in _BATCH.items()
+            if now - buf["first_seen"] >= BATCH_WINDOW
+        ]
     for ip in expired:
-        print(f"[notifier] Batch timeout flush for {ip}")
+        print(f"[notifier] 60s window flush for {ip}")
         _flush_ip(ip)
 
 
@@ -228,14 +242,21 @@ def send_alert(alert: dict) -> None:
             _BATCH.pop(ip, None)
         return
 
-    # ── BATCH: MEDIUM / LOW ──
+    # ── BATCH: MEDIUM / LOW / HIGH (BRUTE_FORCE) ──
+    # Fixed 60s window from first_seen. Continuous attack = 1 batch per minute.
+    # Flush triggers when:
+    #   a) 60s have passed since first hit in this window (periodic, fixed)
+    #   b) Attacker switches username (immediate flush of old batch)
+    now = time.time()
     with BATCH_LOCK:
         if ip in _BATCH:
             existing  = _BATCH[ip]
             prev_user = existing.get("user", "")
 
             if user and user != prev_user:
+                # ── Username changed → flush old batch immediately, start new ──
                 old_buf = _BATCH.pop(ip)
+                print(f"[notifier] Username changed {prev_user!r} → {user!r} for {ip}, flushing old batch (count={old_buf['count']})")
                 threading.Thread(
                     target=lambda b: _send_raw(_build_message(b)),
                     args=(old_buf,), daemon=True
@@ -252,12 +273,16 @@ def send_alert(alert: dict) -> None:
                     "is_vpn":         alert.get("is_vpn",       False),
                     "is_blacklisted": alert.get("is_blacklisted", False),
                     "count":          count,
-                    "first_seen":     time.time(),
+                    "first_seen":     now,   # new 60s window starts
                 }
             else:
-                existing["count"] = count   # use real count from anomaly_detector, not += 1
+                # ── Same username → accumulate count, window keeps running ──
+                existing["count"]    = count  # real count from anomaly_detector
                 existing["severity"] = severity
+                # first_seen unchanged — 60s window keeps ticking from original start
+                print(f"[notifier] Batch updated for {ip}/{user}: count={count}")
         else:
+            # ── New IP or fresh window after flush → start new 60s batch ──
             _BATCH[ip] = {
                 "alert_type":     alert_type,
                 "severity":       severity,
@@ -270,7 +295,7 @@ def send_alert(alert: dict) -> None:
                 "is_vpn":         alert.get("is_vpn",       False),
                 "is_blacklisted": alert.get("is_blacklisted", False),
                 "count":          count,
-                "first_seen":     time.time(),
+                "first_seen":     now,   # 60s window starts now
             }
 
 
