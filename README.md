@@ -8,7 +8,7 @@
 
 > Real-time SSH log monitoring, brute-force detection, IP threat intelligence, and Telegram alerts — all in one dashboard.
 
-**Live Demo:** [https://sentinelwatch.onrender.com](https://sentinelwatch.onrender.com)
+**Live Demo:** [https://sentinelwatch.onrender.com](https://sentinelwatchh.onrender.com)
 
 ---
 
