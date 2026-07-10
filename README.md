@@ -142,34 +142,91 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ## 🔍 Detection Logic
 
-The parser matches common Linux auth log patterns:
+SentinelWatch reads Linux SSH authentication logs from `/var/log/auth.log`, converts important log lines into normalized events, evaluates those events for attack behavior, enriches remote IPs with threat intelligence, then stores and sends actionable alerts.
 
-| Pattern | Event Type |
+### Detection Pipeline
+
+```text
+Raw auth.log line
+      ↓
+modules/parser.py
+      ↓
+Normalized event: type, time, user, ip
+      ↓
+modules/anomaly_detector.py
+      ↓
+Alert decision + severity
+      ↓
+modules/intel_collector.py
+      ↓
+IP enrichment + severity upgrade
+      ↓
+modules/notifier.py + modules/storage.py
+      ↓
+Telegram alert + dashboard database record
+```
+### IP Intelligence and Severity Upgrade
+
+For remote IP alerts, `modules/intel_collector.py` enriches the IP address with:
+
+| Source | Fields Used |
 |---|---|
-| `Failed password for ... from IP` | `failed_login` |
-| `Invalid user ... from IP` | `invalid_user` |
-| `Accepted password for ... from IP` | `successful_login` |
-| `Accepted publickey for ... from IP` | `successful_login_key` |
-| `Failed password for root from IP` | `root_attack` |
-| `maximum authentication attempts exceeded` | `max_auth_exceeded` |
-| `pam_unix ... authentication failure` | `pam_auth_failure` |
-| `new user: name=...` | `new_user_created` |
-| `usermod ... sudo/admin/wheel` | `privilege_escalation` |
+| AbuseIPDB | Abuse confidence score, total reports, country, last reported time |
+| ipinfo.io | City, organization/ASN, TOR flag, VPN flag |
 
-The anomaly detector uses **in-memory tracking** per IP:
+Severity can be upgraded after enrichment:
 
-```python
-BRUTE_FORCE_THRESHOLD = 5   # attempts
-BRUTE_FORCE_WINDOW    = 60  # seconds
-MAX_TRACKED_IPS       = 5000
+```text
+Abuse score >= 90  → CRITICAL
+Abuse score >= 50  → HIGH, unless already CRITICAL
+Abuse score >= 20  → MEDIUM, only when current severity is LOW
 ```
 
-Severity is upgraded based on AbuseIPDB score:
+### Whitelist and Blacklist Handling
 
-| Abuse Score | Resulting Severity |
+Before sending or saving an alert, the auditor checks IP lists from the database:
+
+- Whitelisted IPs are skipped.
+- Existing blacklisted IPs reuse stored blacklist intelligence and skip a fresh AbuseIPDB lookup.
+- IPs are auto-blacklisted when either condition is met:
+
+```python
+AUTO_BLACKLIST_ABUSE_SCORE = 60
+AUTO_BLACKLIST_TOTAL_REPORTS = 100
+```
+
+### Telegram Alert Routing
+
+`modules/notifier.py` reduces Telegram noise by sending critical alerts immediately and batching lower-priority traffic.
+
+| Alert / Severity | Telegram Delivery |
 |---|---|
-| ≥ 90% | CRITICAL |
-| ≥ 50% | HIGH |
-| ≥ 20% | MEDIUM |
+| `CRITICAL` severity | Immediate |
+| `ROOT_ATTACK` | Immediate |
+| `PRIVILEGE_ESCALATION` | Immediate |
+| `SUCCESS_AFTER_FAILURES` | Immediate |
+| `NEW_USER_CREATED` | Immediate |
+| `BRUTE_FORCE` with `HIGH` severity | Batched per IP |
+| `MEDIUM` / `LOW` severity | Batched per IP |
 
----
+Batching behavior:
+
+- Each IP gets a fixed 60-second batch window.
+- A continuous 5-minute attack produces about 5 batch messages, not hundreds of individual messages.
+- If the attacking IP switches usernames, the old batch is flushed and a new batch starts.
+- A background thread checks expired batches every 5 seconds.
+- A 3-second global send interval helps avoid Telegram rate-limit issues.
+
+### Stored Alert Data
+
+Alerts are saved through `modules/storage.py` into Turso/libSQL with the important investigation fields:
+
+- timestamp
+- alert type and severity
+- IP address and username
+- country, city, organization
+- AbuseIPDB score and total reports
+- attempt count
+- TOR/VPN flags
+
+These records power the web dashboard, daily summaries, top-IP statistics, and generated reports.
